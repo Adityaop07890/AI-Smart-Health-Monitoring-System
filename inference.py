@@ -1,23 +1,29 @@
 import os
+import json
 import sys
-from pathlib import Path
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 from openai import OpenAI
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-from env import HealthEnv
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4o-mini")
 HF_TOKEN     = os.getenv("HF_TOKEN", "")
+SERVER_URL   = os.getenv("SERVER_URL", "http://localhost:7860")
 
 client = OpenAI(
     base_url=API_BASE_URL,
     api_key=HF_TOKEN if HF_TOKEN else "no-key",
 )
 
+def http(method, path, body=None):
+    url = SERVER_URL + path
+    data = json.dumps(body).encode() if body is not None else None
+    req = Request(url, data=data, method=method,
+                  headers={"Content-Type": "application/json"})
+    with urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
 def llm_choose_action(heart_rate: int, temperature: float) -> int:
-    """Use OpenAI client to decide which action to take."""
     prompt = (
         f"You are a health monitoring AI. "
         f"Current vitals: heart_rate={heart_rate}, temperature={temperature}. "
@@ -40,7 +46,6 @@ def llm_choose_action(heart_rate: int, temperature: float) -> int:
             raise ValueError(f"Out of range: {action}")
         return action
     except Exception:
-        # Fallback rule-based logic if LLM call fails
         if heart_rate > 120 or temperature > 39:
             return 2
         elif heart_rate > 100 or temperature > 38:
@@ -48,30 +53,38 @@ def llm_choose_action(heart_rate: int, temperature: float) -> int:
         return 0
 
 
-env = HealthEnv()
-
 print("[START]")
 
-state = env.reset()
+try:
+    reset_data = http("POST", "/reset")
+except URLError as e:
+    print(f"[ERROR] Could not reach server at {SERVER_URL}: {e}")
+    sys.exit(1)
+
+obs = reset_data["observation"]
 done = False
 step_count = 0
 total_reward = 0.0
-print(f"[STEP] step={step_count} state={state} action=None reward=0.0 done={done}")
+print(f"[STEP] step={step_count} state={obs} action=None reward=0.0 done={done}")
 
 while not done and step_count < 20:
-    hr   = state["heart_rate"]
-    temp = state["temperature"]
+    hr   = obs["heart_rate"]
+    temp = obs["temperature"]
 
     action = llm_choose_action(hr, temp)
 
-    next_state, reward, done, _ = env.step(action)
+    try:
+        data = http("POST", "/step", {"action": action})
+    except URLError as e:
+        print(f"[ERROR] Step request failed: {e}")
+        sys.exit(1)
 
-    step_count    += 1
-    total_reward  += reward
+    obs          = data["observation"]
+    reward       = data["reward"]
+    done         = data["done"]
+    step_count  += 1
+    total_reward += reward
 
-    print(f"[STEP] step={step_count} state={next_state} action={action} reward={reward} done={done}")
-
-    state = next_state
-
+    print(f"[STEP] step={step_count} state={obs} action={action} reward={reward} done={done}")
 
 print(f"[END] total_steps={step_count} total_reward={round(total_reward, 4)}")
