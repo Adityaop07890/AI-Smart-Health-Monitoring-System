@@ -1,4 +1,5 @@
 import random
+import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -110,3 +111,11 @@ def grade_medium():
 def grade_hard():
     _, _, h = _score()
     return {"task": "hard_task", "score": h}
+
+
+def main():
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
