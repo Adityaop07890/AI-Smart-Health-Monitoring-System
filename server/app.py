@@ -59,7 +59,7 @@ class GradeRequest(BaseModel):
 @app.post("/reset")
 def reset():
     state = env.reset()
-    return {"state": state, "episode_id": env._episode_id}
+    return {"observation": state, "state": state, "episode_id": env._episode_id}
 
 
 @app.post("/step")
@@ -67,7 +67,7 @@ def step(req: StepRequest):
     if req.action not in (0, 1, 2):
         raise HTTPException(status_code=400, detail="action must be 0, 1, or 2")
     next_state, reward, done, info = env.step(req.action)
-    return {"state": next_state, "reward": reward, "done": done, "info": info}
+    return {"observation": next_state, "state": next_state, "reward": reward, "done": done, "info": info}
 
 
 @app.get("/state")
