@@ -1,3 +1,12 @@
+"""
+HealthEnv - local Python wrapper around the FastAPI server.
+Used by inference.py so it can run without a live HTTP server.
+
+Reward values are strictly within (0, 1):
+  correct action   → 0.95  (was 1.0)
+  off-by-one       → 0.50
+  wrong action     → 0.05  (was 0.0)
+"""
 import random
 import uuid
 from typing import Any, Dict, Tuple
@@ -21,6 +30,9 @@ class HealthEnv:
         }
 
     def _compute_reward(self, heart_rate: int, temperature: float, action: int) -> float:
+        """
+        Returns a reward strictly in (0, 1) — never 0.0 or 1.0.
+        """
         if heart_rate > 120 or temperature > 39.0:
             correct = 2
         elif heart_rate > 100 or temperature > 38.0:
@@ -29,11 +41,13 @@ class HealthEnv:
             correct = 0
 
         if action == correct:
-            return 0.9
+            return 0.95          # perfect — but < 1
         elif abs(action - correct) == 1:
-            return 0.5
+            return 0.50          # partial credit
         else:
-            return 0.1
+            return 0.05          # wrong — but > 0
+
+    # ── OpenEnv-style API ──────────────────────────────────────────────────
 
     def reset(self) -> Dict[str, Any]:
         self._episode_id = str(uuid.uuid4())
@@ -46,7 +60,7 @@ class HealthEnv:
 
     def step(self, action: int) -> Tuple[Dict[str, Any], float, bool, Dict]:
         if self._done:
-            return dict(self._state), 0.0, True, {"message": "Episode done"}
+            return dict(self._state), 0.05, True, {"message": "Episode done"}
 
         reward = self._compute_reward(
             self._state["heart_rate"], self._state["temperature"], action
