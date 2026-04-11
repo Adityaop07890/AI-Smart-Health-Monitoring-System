@@ -1,5 +1,6 @@
 import random
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from env import HealthEnv
 
 app = FastAPI(title="AI Health Monitoring")
@@ -22,13 +23,20 @@ def _optimal_action(hr: int, tmp: float) -> int:
 @app.post("/reset")
 def reset():
     state = _env.reset()
-    return {"state": state, "episode_id": _env._episode_id}
+    return {"observation": state, "episode_id": _env._episode_id}
 
 
 @app.post("/step")
 def step(action: int):
     state, reward, done, info = _env.step(action)
-    return {"state": state, "reward": reward, "done": done, "info": info}
+    return {
+        "observation": state,
+        "reward": reward,
+        "done": done,
+        "terminated": done,
+        "truncated": False,
+        "info": info,
+    }
 
 
 @app.get("/state")
@@ -40,9 +48,9 @@ def state():
 def tasks():
     return {
         "tasks": [
-            {"name": "easy_task",   "grader_endpoint": "/grade/easy_task"},
-            {"name": "medium_task", "grader_endpoint": "/grade/medium_task"},
-            {"name": "hard_task",   "grader_endpoint": "/grade/hard_task"},
+            {"id": "easy_task",   "name": "easy_task",   "grader_endpoint": "/grade/easy_task"},
+            {"id": "medium_task", "name": "medium_task", "grader_endpoint": "/grade/medium_task"},
+            {"id": "hard_task",   "name": "hard_task",   "grader_endpoint": "/grade/hard_task"},
         ]
     }
 
@@ -102,7 +110,6 @@ def grade_hard_task():
             hits += 1
     return {"task": "hard_task", "score": _clamp(hits / total)}
 
-from fastapi.responses import HTMLResponse
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -172,14 +179,14 @@ function render(){
       <div><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:12px;color:#888">grader score</span><span class="score-num">${s.score!=null?s.score.toFixed(4):'—'}</span></div>
         <div class="bar-bg"><div class="bar-fill" id="bar_${t.id}" style="width:${sw};background:${t.color}"></div></div>
       </div>
-      <div class="log" id="log_${t.id}">${s.logs.slice(-6).join('\n')||'— no runs yet —'}</div>
+      <div class="log" id="log_${t.id}">${s.logs.slice(-6).join('\\n')||'— no runs yet —'}</div>
       <button id="btn_${t.id}" onclick="run('${t.id}')" ${s.status==='running'?'disabled':''}>
         ${s.status==='running'?'Running…':'Run + Grade'}
       </button>
     </div>`;
   }).join('');
 }
-function log(id,msg){S[id].logs.push(msg);const el=document.getElementById('log_'+id);if(el){el.textContent=S[id].logs.slice(-6).join('\n');el.scrollTop=99999;}}
+function log(id,msg){S[id].logs.push(msg);const el=document.getElementById('log_'+id);if(el){el.textContent=S[id].logs.slice(-6).join('\\n');el.scrollTop=99999;}}
 async function run(id){
   const t=tasks.find(x=>x.id===id);
   S[id]={...S[id],status:'running',logs:[],score:null,hr:'—',tmp:'—',action:null};
@@ -192,7 +199,7 @@ async function run(id){
     for(let i=0;i<t.steps;i++){
       const rr=await fetch(BASE+'/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
       const d=await rr.json();
-      const cur=d.state||d;
+      const cur=d.observation||d.state||d;
       const hr=cur.heart_rate||Math.floor(Math.random()*105+55);
       const tmp=cur.temperature||parseFloat((Math.random()*4.5+36).toFixed(1));
       const a=pick(hr,tmp);
