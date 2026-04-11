@@ -1,4 +1,5 @@
 import random
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from env import HealthEnv
@@ -109,3 +110,11 @@ def grade_hard_task():
         if reward >= 0.9:
             hits += 1
     return {"task": "hard_task", "score": _clamp(hits / total)}
+
+
+def main():
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
