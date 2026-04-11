@@ -1,24 +1,15 @@
-"""
-FastAPI server for the AI Smart Health Monitoring System.
-- Serves the frontend dashboard at GET /
-- Provides environment API: /reset, /step, /state, /tasks
-- Provides 3 grader endpoints with scores strictly in (0, 1)
-
-Import fix: uses importlib to load env.py by absolute filesystem path,
-so it works regardless of Python working directory or sys.path state.
-"""
 import importlib.util
 import sys
+import uvicorn
 from pathlib import Path
 
-# ── Robust import of HealthEnv from sibling env.py ──────────────────────────
+# Load env.py by absolute path - avoids sys.path issues inside server/ subpackage
 _ENV_PATH = Path(__file__).resolve().parent.parent / "env.py"
 _spec = importlib.util.spec_from_file_location("health_env_module", _ENV_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules["health_env_module"] = _mod
 _spec.loader.exec_module(_mod)
 HealthEnv = _mod.HealthEnv
-# ────────────────────────────────────────────────────────────────────────────
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,28 +32,18 @@ app.add_middleware(
 
 env = HealthEnv()
 
-
-# ── Frontend ─────────────────────────────────────────────────────────────────
-
 _FRONTEND_PATH = Path(__file__).resolve().parent.parent / "frontend.html"
+
 
 @app.get("/", response_class=HTMLResponse)
 def frontend():
-    """Serve the health monitoring dashboard."""
     if _FRONTEND_PATH.exists():
         return HTMLResponse(content=_FRONTEND_PATH.read_text(encoding="utf-8"))
-    return HTMLResponse(content="""
-    <html><body style="background:#050a0f;color:#00e5ff;font-family:monospace;padding:40px">
-    <h2>AI Smart Health Monitoring System</h2>
-    <p>frontend.html not found. API is running at <a href="/docs">/docs</a></p>
-    </body></html>
-    """)
+    return HTMLResponse(content="<html><body><h2>HealthMon API running</h2><a href=/docs>Swagger docs</a></body></html>")
 
-
-# ── Pydantic models ──────────────────────────────────────────────────────────
 
 class StepRequest(BaseModel):
-    action: int  # 0, 1, or 2
+    action: int
 
 
 class GradeStep(BaseModel):
@@ -74,8 +55,6 @@ class GradeStep(BaseModel):
 class GradeRequest(BaseModel):
     steps: List[GradeStep]
 
-
-# ── Environment endpoints ─────────────────────────────────────────────────────
 
 @app.post("/reset")
 def reset():
@@ -122,49 +101,32 @@ def tasks():
     }
 
 
-# ── Grader helpers ────────────────────────────────────────────────────────────
-
 def _to_open(raw: float) -> float:
-    """
-    Map a ratio in [0, 1] to the OPEN interval (0, 1).
-    Formula:  score = 0.05 + raw * 0.90
-      raw=0.0 → 0.05  (strictly > 0)
-      raw=1.0 → 0.95  (strictly < 1)
-    """
+    # Maps [0,1] -> (0,1): score = 0.05 + raw*0.90
+    # raw=0.0 -> 0.05 (strictly > 0), raw=1.0 -> 0.95 (strictly < 1)
     clamped = max(0.0, min(1.0, raw))
     return round(0.05 + clamped * 0.90, 6)
 
 
-# ── Grader endpoints ──────────────────────────────────────────────────────────
-
 @app.post("/grade/easy_task")
 def grade_easy_task(req: GradeRequest):
-    """Easy Task: heart_rate > 100 must trigger action >= 1."""
     if not req.steps:
-        return {"task": "easy_task", "score": _to_open(0.0),
-                "detail": "No steps provided — minimum score assigned"}
-
+        return {"task": "easy_task", "score": _to_open(0.0), "detail": "No steps provided"}
     high_hr = [s for s in req.steps if s.heart_rate > 100]
     if not high_hr:
-        return {"task": "easy_task", "score": _to_open(0.5),
-                "detail": "No high-HR steps in trajectory — neutral score"}
-
+        return {"task": "easy_task", "score": _to_open(0.5), "detail": "No high-HR steps in trajectory"}
     correct = sum(1 for s in high_hr if s.action >= 1)
-    raw = correct / len(high_hr)
     return {
         "task": "easy_task",
-        "score": _to_open(raw),
+        "score": _to_open(correct / len(high_hr)),
         "detail": f"{correct}/{len(high_hr)} high-HR steps triggered a warning or alert",
     }
 
 
 @app.post("/grade/medium_task")
 def grade_medium_task(req: GradeRequest):
-    """Medium Task: detect rising HR trend and respond with action >= 1."""
     if len(req.steps) < 2:
-        return {"task": "medium_task", "score": _to_open(0.0),
-                "detail": "Need at least 2 steps to detect a trend"}
-
+        return {"task": "medium_task", "score": _to_open(0.0), "detail": "Need at least 2 steps"}
     trend_total = 0
     trend_correct = 0
     for i in range(1, len(req.steps)):
@@ -172,35 +134,33 @@ def grade_medium_task(req: GradeRequest):
             trend_total += 1
             if req.steps[i].action >= 1:
                 trend_correct += 1
-
     if trend_total == 0:
-        return {"task": "medium_task", "score": _to_open(0.5),
-                "detail": "No increasing-trend steps found — neutral score"}
-
-    raw = trend_correct / trend_total
+        return {"task": "medium_task", "score": _to_open(0.5), "detail": "No increasing-trend steps found"}
     return {
         "task": "medium_task",
-        "score": _to_open(raw),
+        "score": _to_open(trend_correct / trend_total),
         "detail": f"{trend_correct}/{trend_total} rising-trend steps responded correctly",
     }
 
 
 @app.post("/grade/hard_task")
 def grade_hard_task(req: GradeRequest):
-    """Hard Task: heart_rate > 120 OR temperature > 39 must trigger action == 2."""
     if not req.steps:
-        return {"task": "hard_task", "score": _to_open(0.0),
-                "detail": "No steps provided — minimum score assigned"}
-
+        return {"task": "hard_task", "score": _to_open(0.0), "detail": "No steps provided"}
     critical = [s for s in req.steps if s.heart_rate > 120 or s.temperature > 39.0]
     if not critical:
-        return {"task": "hard_task", "score": _to_open(0.5),
-                "detail": "No critical steps in trajectory — neutral score"}
-
+        return {"task": "hard_task", "score": _to_open(0.5), "detail": "No critical steps in trajectory"}
     correct = sum(1 for s in critical if s.action == 2)
-    raw = correct / len(critical)
     return {
         "task": "hard_task",
-        "score": _to_open(raw),
+        "score": _to_open(correct / len(critical)),
         "detail": f"{correct}/{len(critical)} critical steps issued emergency alert",
     }
+
+
+def main():
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860, reload=False)
+
+
+if __name__ == "__main__":
+    main()
