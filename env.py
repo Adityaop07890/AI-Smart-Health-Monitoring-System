@@ -1,7 +1,3 @@
-"""
-HealthEnv - local Python wrapper around the FastAPI server.
-Used by inference.py so it can run without a live HTTP server.
-"""
 import random
 import uuid
 from typing import Any, Dict, Tuple
@@ -18,27 +14,26 @@ class HealthEnv:
         self._heart_rates: list = []
         self._state: Dict[str, Any] = {}
 
-
     def _random_state(self) -> Dict[str, Any]:
         return {
             "heart_rate": random.randint(55, 160),
             "temperature": round(random.uniform(36.0, 40.5), 1),
         }
 
-   def _compute_reward(self, heart_rate: int, temperature: float, action: int) -> float:
-    if heart_rate > 120 or temperature > 39.0:
-        correct = 2
-    elif heart_rate > 100 or temperature > 38.0:
-        correct = 1
-    else:
-        correct = 0
+    def _compute_reward(self, heart_rate: int, temperature: float, action: int) -> float:
+        if heart_rate > 120 or temperature > 39.0:
+            correct = 2
+        elif heart_rate > 100 or temperature > 38.0:
+            correct = 1
+        else:
+            correct = 0
 
-    if action == correct:
-        return 0.9        
-    elif abs(action - correct) == 1:
-        return 0.5
-    else:
-        return 0.1        
+        if action == correct:
+            return 0.9
+        elif abs(action - correct) == 1:
+            return 0.5
+        else:
+            return 0.1
 
     def reset(self) -> Dict[str, Any]:
         self._episode_id = str(uuid.uuid4())
