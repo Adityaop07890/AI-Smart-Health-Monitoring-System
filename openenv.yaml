@@ -29,7 +29,6 @@ environment:
   reward_range:
     min: 0.0
     max: 1.0
-
 tasks:
   - id: easy_task
     name: easy_task
@@ -51,6 +50,7 @@ tasks:
     difficulty: hard
     success_condition: (heart_rate > 120 OR temperature > 39) AND action == 2
     grader_endpoint: /grade/hard_task
+
 
 api:
   reset: /reset
