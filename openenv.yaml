@@ -1,12 +1,11 @@
 name: health-monitoring-env
-version: "1.0"
-
+version: 1.0
 description: >
   A real-world health monitoring environment where an AI agent learns
   to detect abnormal health conditions and trigger appropriate alerts
   based on heart rate and body temperature readings.
 
-author: Aditya
+author: Shubham Tiwari
 
 environment:
   state_space:
@@ -27,30 +26,27 @@ environment:
       - 2: emergency_alert
 
   reward_range:
-    min: 0.0
-    max: 1.0
+    min: 0.05
+    max: 0.95
+
 tasks:
-  - id: easy_task
-    name: easy_task
+  - name: easy_task
     description: Detect high heart rate (>100) and send at least a warning
-    difficulty: easy
     success_condition: heart_rate > 100 AND action >= 1
     grader_endpoint: /grade/easy_task
+    has_grader: true
 
-  - id: medium_task
-    name: medium_task
-    description: Detect an increasing trend in heart rate over multiple steps and respond appropriately
-    difficulty: medium
+  - name: medium_task
+    description: Detect an increasing heart rate trend over multiple steps and respond appropriately
     success_condition: heart_rate increasing over time AND action >= 1
     grader_endpoint: /grade/medium_task
+    has_grader: true
 
-  - id: hard_task
-    name: hard_task
+  - name: hard_task
     description: Multi-sensor decision — issue emergency alert if heart_rate > 120 OR temperature > 39
-    difficulty: hard
     success_condition: (heart_rate > 120 OR temperature > 39) AND action == 2
     grader_endpoint: /grade/hard_task
-
+    has_grader: true
 
 api:
   reset: /reset
