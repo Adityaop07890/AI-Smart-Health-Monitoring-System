@@ -1,71 +1,95 @@
-name: health-monitoring-env
-version: 1.0
-description: >
-  A real-world health monitoring environment where an AI agent learns
-  to detect abnormal health conditions and trigger appropriate alerts
-  based on heart rate and body temperature readings.
+"""
+inference.py — Baseline inference script for the AI Smart Health Monitoring System.
+Runs a 20-step episode using the LLM to choose actions and emits structured logs.
 
-author: Shubham Tiwari
+Required environment variables:
+  API_BASE_URL  — LLM API base URL  (default: https://api.openai.com/v1)
+  MODEL_NAME    — Model identifier  (default: gpt-4o-mini)
+  HF_TOKEN      — API key / HF token
+"""
 
-environment:
-  state_space:
-    heart_rate:
-      type: integer
-      min: 55
-      max: 160
-    temperature:
-      type: float
-      min: 36.0
-      max: 40.5
+import os
+import sys
+from pathlib import Path
+from openai import OpenAI
 
-  action_space:
-    type: discrete
-    actions:
-      - 0: do_nothing
-      - 1: send_warning
-      - 2: emergency_alert
+# Ensure env.py (in the same directory) is importable
+sys.path.insert(0, str(Path(__file__).parent))
 
-  reward_range:
-    min: 0.05
-    max: 0.95
+from env import HealthEnv  # noqa: E402
 
-tasks:
-  - id: easy_task
-    name: easy_task
-    description: Detect high heart rate (>100) and send at least a warning
-    success_condition: heart_rate > 100 AND action >= 1
-    grader_endpoint: /grade/easy_task
+# ── Configuration ──────────────────────────────────────────────────────────────
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME   = os.getenv("MODEL_NAME",   "gpt-4o-mini")
+HF_TOKEN     = os.getenv("HF_TOKEN",     "")
 
-  - id: medium_task
-    name: medium_task
-    description: Detect an increasing trend in heart rate over multiple steps and respond appropriately
-    success_condition: heart_rate increasing over time AND action >= 1
-    grader_endpoint: /grade/medium_task
+client = OpenAI(
+    base_url=API_BASE_URL,
+    api_key=HF_TOKEN if HF_TOKEN else "no-key",
+)
 
-  - id: hard_task
-    name: hard_task
-    description: Multi-sensor decision — issue emergency alert if heart_rate > 120 OR temperature > 39
-    success_condition: (heart_rate > 120 OR temperature > 39) AND action == 2
-    grader_endpoint: /grade/hard_task
 
-api:
-  reset: /reset
-  step: /step
-  state: /state
-  tasks: /tasks
+def llm_choose_action(heart_rate: int, temperature: float) -> int:
+    """Use the OpenAI client to choose action 0, 1, or 2."""
+    prompt = (
+        "You are a health monitoring AI. "
+        f"Current vitals: heart_rate={heart_rate}, temperature={temperature}. "
+        "Choose one action:\n"
+        "  0 = do_nothing       (vitals are normal)\n"
+        "  1 = send_warning     (vitals are mildly concerning)\n"
+        "  2 = emergency_alert  (vitals are critically abnormal)\n"
+        "Reply with ONLY the single digit 0, 1, or 2."
+    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5,
+            temperature=0,
+        )
+        text = response.choices[0].message.content.strip()
+        action = int(text[0])
+        if action not in (0, 1, 2):
+            raise ValueError(f"Out-of-range action: {action}")
+        return action
+    except Exception:
+        # Rule-based fallback when LLM is unavailable
+        if heart_rate > 120 or temperature > 39.0:
+            return 2
+        elif heart_rate > 100 or temperature > 38.0:
+            return 1
+        return 0
 
-  def grade(completion, state=None, **kwargs) -> float:
-    # 1. Your existing logic to calculate the score goes here
-    raw_score = 0.0 
-    
-    #... logic that calculates raw_score (e.g., checking if the agent succeeded)...
-    # if agent_succeeded: raw_score = 1.0
-    
-    # 2. FIX: Clamp the score to be strictly between 0 and 1
-    min_score = 0.001
-    max_score = 0.999
-    
-    final_score = max(min_score, min(max_score, raw_score))
-    
-    # 3. Return the clamped float
-    return float(final_score)
+
+# ── Episode loop ───────────────────────────────────────────────────────────────
+env = HealthEnv()
+
+print("[START]")
+
+state      = env.reset()
+done       = False
+step_count = 0
+total_reward = 0.0
+
+# Log the initial observation (step 0, no action yet)
+print(f"[STEP] step={step_count} state={state} action=None reward=0.0 done={done}")
+
+while not done and step_count < 20:
+    hr   = state["heart_rate"]
+    temp = state["temperature"]
+
+    action = llm_choose_action(hr, temp)
+
+    next_state, reward, done, _ = env.step(action)
+
+    step_count   += 1
+    total_reward += reward
+
+    print(
+        f"[STEP] step={step_count} state={next_state} "
+        f"action={action} reward={reward} done={done}"
+    )
+
+    state = next_state
+
+print(f"[END] total_steps={step_count} total_reward={round(total_reward, 4)}")
