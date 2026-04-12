@@ -53,3 +53,19 @@ api:
   step: /step
   state: /state
   tasks: /tasks
+
+  def grade(completion, state=None, **kwargs) -> float:
+    # 1. Your existing logic to calculate the score goes here
+    raw_score = 0.0 
+    
+    #... logic that calculates raw_score (e.g., checking if the agent succeeded)...
+    # if agent_succeeded: raw_score = 1.0
+    
+    # 2. FIX: Clamp the score to be strictly between 0 and 1
+    min_score = 0.001
+    max_score = 0.999
+    
+    final_score = max(min_score, min(max_score, raw_score))
+    
+    # 3. Return the clamped float
+    return float(final_score)
