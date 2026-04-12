@@ -141,3 +141,18 @@ def grade_hard(request: GradeRequest) -> Dict[str, Any]:
     return {"task": "hard_task", "score": round(score, 4), "passed": score >= 0.5,
             "vitals": {"heart_rate": request.heart_rate, "temperature": request.temperature},
             "action": request.action}
+
+
+def main():
+    """Entry point for running the server directly (multi-mode deployment)."""
+    import uvicorn
+    uvicorn.run(
+        "server.app:app",
+        host="0.0.0.0",
+        port=7860,
+        log_level="info",
+    )
+
+
+if __name__ == "__main__":
+    main()
