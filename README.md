@@ -34,13 +34,15 @@ The agent observes real-time vitals and must classify severity to trigger the ri
 
 ## Reward Function
 
+All rewards are **strictly within (0, 1)** — never 0.0 or 1.0.
+
 | Condition                          | Correct Action | Reward |
 |------------------------------------|---------------|--------|
-| hr > 120 or temp > 39.0           | 2             | 1.0    |
-| hr > 100 or temp > 38.0           | 1             | 1.0    |
-| Normal                             | 0             | 1.0    |
-| Off by 1 action                    | —             | 0.5    |
-| Off by 2 actions                   | —             | 0.0    |
+| hr > 120 or temp > 39.0           | 2             | 0.95   |
+| hr > 100 or temp > 38.0           | 1             | 0.95   |
+| Normal                             | 0             | 0.95   |
+| Off by 1 action                    | —             | 0.50   |
+| Off by 2 actions                   | —             | 0.05   |
 
 ## Tasks
 
@@ -50,15 +52,15 @@ The agent observes real-time vitals and must classify severity to trigger the ri
 
 ## API Endpoints
 
-| Method | Endpoint              | Description           |
-|--------|-----------------------|-----------------------|
-| POST   | /reset                | Start new episode     |
-| POST   | /step                 | Take action           |
-| GET    | /state                | Current episode state |
-| GET    | /tasks                | List all tasks        |
-| GET    | /grade/easy_task      | Grade easy task       |
-| GET    | /grade/medium_task    | Grade medium task     |
-| GET    | /grade/hard_task      | Grade hard task       |
+| Method     | Endpoint              | Description                          |
+|------------|-----------------------|--------------------------------------|
+| POST       | /reset                | Start new episode                    |
+| POST       | /step                 | Take action                          |
+| GET        | /state                | Current episode state                |
+| GET        | /tasks                | List all tasks                       |
+| GET / POST | /grade/easy_task      | Grade easy task (GET = oracle run)   |
+| GET / POST | /grade/medium_task    | Grade medium task (GET = oracle run) |
+| GET / POST | /grade/hard_task      | Grade hard task (GET = oracle run)   |
 
 ## Setup
 
