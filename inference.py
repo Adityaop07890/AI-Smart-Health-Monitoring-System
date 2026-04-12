@@ -1,37 +1,44 @@
+"""
+inference.py — Baseline inference script for the AI Smart Health Monitoring System.
+Runs a 20-step episode using the LLM to choose actions and emits structured logs.
+
+Required environment variables:
+  API_BASE_URL  — LLM API base URL  (default: https://api.openai.com/v1)
+  MODEL_NAME    — Model identifier  (default: gpt-4o-mini)
+  HF_TOKEN      — API key / HF token
+"""
+
 import os
-import json
 import sys
-from urllib.request import urlopen, Request
-from urllib.error import URLError
+from pathlib import Path
 from openai import OpenAI
 
+# Ensure env.py (in the same directory) is importable
+sys.path.insert(0, str(Path(__file__).parent))
+
+from env import HealthEnv  # noqa: E402
+
+# ── Configuration ──────────────────────────────────────────────────────────────
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4o-mini")
-HF_TOKEN     = os.getenv("HF_TOKEN", "")
-SERVER_URL   = os.getenv("SERVER_URL", "http://localhost:7860")
+MODEL_NAME   = os.getenv("MODEL_NAME",   "gpt-4o-mini")
+HF_TOKEN     = os.getenv("HF_TOKEN",     "")
 
 client = OpenAI(
     base_url=API_BASE_URL,
     api_key=HF_TOKEN if HF_TOKEN else "no-key",
 )
 
-def http(method, path, body=None):
-    url = SERVER_URL + path
-    data = json.dumps(body).encode() if body is not None else None
-    req = Request(url, data=data, method=method,
-                  headers={"Content-Type": "application/json"})
-    with urlopen(req, timeout=10) as r:
-        return json.loads(r.read())
 
 def llm_choose_action(heart_rate: int, temperature: float) -> int:
+    """Use the OpenAI client to choose action 0, 1, or 2."""
     prompt = (
-        f"You are a health monitoring AI. "
+        "You are a health monitoring AI. "
         f"Current vitals: heart_rate={heart_rate}, temperature={temperature}. "
-        f"Choose one action:\n"
-        f"  0 = do_nothing (vitals are normal)\n"
-        f"  1 = send_warning (vitals are mildly concerning)\n"
-        f"  2 = emergency_alert (vitals are critically abnormal)\n"
-        f"Reply with ONLY the single digit 0, 1, or 2."
+        "Choose one action:\n"
+        "  0 = do_nothing       (vitals are normal)\n"
+        "  1 = send_warning     (vitals are mildly concerning)\n"
+        "  2 = emergency_alert  (vitals are critically abnormal)\n"
+        "Reply with ONLY the single digit 0, 1, or 2."
     )
     try:
         response = client.chat.completions.create(
@@ -43,48 +50,46 @@ def llm_choose_action(heart_rate: int, temperature: float) -> int:
         text = response.choices[0].message.content.strip()
         action = int(text[0])
         if action not in (0, 1, 2):
-            raise ValueError(f"Out of range: {action}")
+            raise ValueError(f"Out-of-range action: {action}")
         return action
     except Exception:
-        if heart_rate > 120 or temperature > 39:
+        # Rule-based fallback when LLM is unavailable
+        if heart_rate > 120 or temperature > 39.0:
             return 2
-        elif heart_rate > 100 or temperature > 38:
+        elif heart_rate > 100 or temperature > 38.0:
             return 1
         return 0
 
 
+# ── Episode loop ───────────────────────────────────────────────────────────────
+env = HealthEnv()
+
 print("[START]")
 
-try:
-    reset_data = http("POST", "/reset")
-except URLError as e:
-    print(f"[ERROR] Could not reach server at {SERVER_URL}: {e}")
-    sys.exit(1)
-
-obs = reset_data["observation"]
-done = False
+state      = env.reset()
+done       = False
 step_count = 0
 total_reward = 0.0
-print(f"[STEP] step={step_count} state={obs} action=None reward=0.0 done={done}")
+
+# Log the initial observation (step 0, no action yet)
+print(f"[STEP] step={step_count} state={state} action=None reward=0.0 done={done}")
 
 while not done and step_count < 20:
-    hr   = obs["heart_rate"]
-    temp = obs["temperature"]
+    hr   = state["heart_rate"]
+    temp = state["temperature"]
 
     action = llm_choose_action(hr, temp)
 
-    try:
-        data = http("POST", "/step", {"action": action})
-    except URLError as e:
-        print(f"[ERROR] Step request failed: {e}")
-        sys.exit(1)
+    next_state, reward, done, _ = env.step(action)
 
-    obs          = data["observation"]
-    reward       = data["reward"]
-    done         = data["done"]
-    step_count  += 1
+    step_count   += 1
     total_reward += reward
 
-    print(f"[STEP] step={step_count} state={obs} action={action} reward={reward} done={done}")
+    print(
+        f"[STEP] step={step_count} state={next_state} "
+        f"action={action} reward={reward} done={done}"
+    )
+
+    state = next_state
 
 print(f"[END] total_steps={step_count} total_reward={round(total_reward, 4)}")
