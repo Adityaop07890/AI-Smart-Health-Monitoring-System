@@ -1,14 +1,14 @@
 import random
+import uvicorn
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from env import HealthEnv
-
-app = FastAPI(title="AI Health Monitoring")
-
-_env = HealthEnv()
-
 
 # ── Utility ─────────────────────────────────────────────────────────────────
 
