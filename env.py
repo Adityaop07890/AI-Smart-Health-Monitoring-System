@@ -2,11 +2,12 @@
 HealthEnv - local Python wrapper around the FastAPI server.
 Used by inference.py so it can run without a live HTTP server.
 
-Reward values are strictly within (0, 1):
-  correct action   → 0.95  (was 1.0)
-  off-by-one       → 0.50
-  wrong action     → 0.05  (was 0.0)
+Reward values are STRICTLY within (0, 1) — never 0.0 or 1.0:
+  correct action  → 0.95
+  off-by-one      → 0.50
+  wrong action    → 0.05
 """
+
 import random
 import uuid
 from typing import Any, Dict, Tuple
@@ -31,7 +32,8 @@ class HealthEnv:
 
     def _compute_reward(self, heart_rate: int, temperature: float, action: int) -> float:
         """
-        Returns a reward strictly in (0, 1) — never 0.0 or 1.0.
+        Returns a reward STRICTLY in (0, 1) — never 0.0 or 1.0.
+        correct → 0.95 | off-by-one → 0.50 | wrong → 0.05
         """
         if heart_rate > 120 or temperature > 39.0:
             correct = 2
@@ -41,11 +43,11 @@ class HealthEnv:
             correct = 0
 
         if action == correct:
-            return 0.95          # perfect — but < 1
+            return 0.95        # perfect — but strictly < 1
         elif abs(action - correct) == 1:
-            return 0.50          # partial credit
+            return 0.50        # partial credit
         else:
-            return 0.05          # wrong — but > 0
+            return 0.05        # wrong — but strictly > 0
 
     # ── OpenEnv-style API ──────────────────────────────────────────────────
 
@@ -67,11 +69,10 @@ class HealthEnv:
         )
         self._total_reward += reward
         self._step_count += 1
-
         self._state = self._random_state()
         self._heart_rates.append(self._state["heart_rate"])
-
         self._done = self._step_count >= 20
+
         return dict(self._state), round(reward, 4), self._done, {"step": self._step_count}
 
     def state(self) -> Dict[str, Any]:
